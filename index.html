@@ -3,7 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>NutriReto App</title>
+    
+    <!-- Título y Meta Tags para WhatsApp (Open Graph) -->
+    <title>💚 NutriReto App</title>
+    <meta property="og:title" content="💚 NutriReto App">
+    <!-- El &#8203; es un espacio invisible para forzar a WhatsApp a no leer el código -->
+    <meta property="og:description" content="&#8203;">
+    <meta name="description" content="&#8203;">
+    <meta property="og:type" content="website">
     
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -366,7 +373,26 @@
           // === AHORA EL PLAN, PUNTOS Y RETOS SE LEEN DE LA CACHÉ AL INICIAR ===
           const [weeklyPlan, setWeeklyPlan] = useState(() => {
             const saved = localStorage.getItem('nutriReto_plan');
-            return saved ? JSON.parse(saved) : [];
+            if (saved) {
+              let parsed = JSON.parse(saved);
+              // Migración de progreso antiguo a registro individual
+              parsed = parsed.map(day => {
+                if (day.progress !== undefined && !day.completedMeals) {
+                  const count = day.progress / 20;
+                  day.completedMeals = {
+                    desayuno: count > 0,
+                    colacion1: count > 1,
+                    almuerzo: count > 2,
+                    colacion2: count > 3,
+                    cena: count > 4
+                  };
+                  delete day.progress;
+                }
+                return day;
+              });
+              return parsed;
+            }
+            return [];
           });
           const [totalPoints, setTotalPoints] = useState(() => {
             const saved = localStorage.getItem('nutriReto_points');
@@ -489,7 +515,7 @@
               almuerzo: getRandomMeal(MEALS_DB.almuerzo, pantry),
               colacion2: getRandomMeal(MEALS_DB.colacion, pantry),
               cena: getRandomMeal(MEALS_DB.cena, pantry),
-              progress: 0 // Progreso independiente por cada día
+              completedMeals: { desayuno: false, colacion1: false, almuerzo: false, colacion2: false, cena: false }
             }));
             setWeeklyPlan(newPlan);
           };
@@ -511,12 +537,19 @@
             }
           };
 
-          const markMealAsDone = () => {
+          const toggleMealStatus = (dayIndex, mealKey) => {
             const updatedPlan = [...weeklyPlan];
-            if (updatedPlan[selectedDayIndex] && updatedPlan[selectedDayIndex].progress < 100) {
-              updatedPlan[selectedDayIndex].progress += 20;
-              setWeeklyPlan(updatedPlan);
-              setTotalPoints(totalPoints + 5);
+            const isCurrentlyDone = updatedPlan[dayIndex].completedMeals[mealKey];
+
+            // Invertir el estado (hecho/no hecho)
+            updatedPlan[dayIndex].completedMeals[mealKey] = !isCurrentlyDone;
+            setWeeklyPlan(updatedPlan);
+
+            // Ajustar puntos
+            if (!isCurrentlyDone) {
+              setTotalPoints(prev => prev + 5);
+            } else {
+              setTotalPoints(prev => prev - 5); // Restar si el usuario se equivocó y desmarca
             }
           };
 
@@ -577,16 +610,12 @@
               }
             });
 
+            // Creamos el script de forma segura dividiendo la palabra para no romper Babel
+            const printScript = "<scr" + "ipt>window.onload = function() { setTimeout(() => { window.print(); window.onafterprint = function() { window.close(); } }, 500); }</scr" + "ipt>";
+
             printContent += `
                 <div class="watermark">Generado por tu Asistente NutriReto 🥑</div>
-                <scr` + `ipt>
-                  window.onload = function() { 
-                    setTimeout(() => {
-                      window.print(); 
-                      window.onafterprint = function() { window.close(); } 
-                    }, 500);
-                  }
-                <\/scr` + `ipt>
+                ${printScript}
               </body>
               </html>
             `;
@@ -761,7 +790,9 @@
 
             const dailyTargetCalories = userData ? Math.round((userData.weight * 22) - (userData.goal > 0 ? 400 : 0)) : 2000;
             const currentCalories = todayPlan ? (todayPlan.desayuno.calories + todayPlan.almuerzo.calories + todayPlan.cena.calories + todayPlan.colacion1.calories + todayPlan.colacion2.calories) : 0;
-            const currentProgress = todayPlan.progress;
+            
+            const completedMeals = todayPlan.completedMeals || {};
+            const currentProgress = Object.values(completedMeals).filter(Boolean).length * 20;
 
             return (
               <div className="space-y-6 animate-fade-in pb-20 md:pb-0">
@@ -817,9 +848,9 @@
                     </div>
                   </div>
                   {currentProgress < 100 ? (
-                    <button onClick={markMealAsDone} className="w-full py-3 bg-green-50 text-green-700 font-semibold rounded-xl hover:bg-green-100 transition-colors flex justify-center items-center gap-2">
-                      <Icon name="CheckCircle" size={20} /> Registrar Comida (+5 pts)
-                    </button>
+                    <div className="w-full py-3 bg-blue-50 text-blue-700 font-semibold rounded-xl text-center flex justify-center items-center gap-2">
+                      <Icon name="Info" size={20} /> Toca las casillas de tu menú para registrar progreso
+                    </div>
                   ) : (
                     <div className="w-full py-3 bg-green-500 text-white font-semibold rounded-xl text-center flex justify-center items-center gap-2">
                       <Icon name="Award" size={20} /> ¡Día completado!
@@ -836,15 +867,15 @@
                       </button>
                     </div>
                     <p className="text-xs text-gray-500 mb-3 px-2 flex items-center gap-1">
-                      <Icon name="Info" size={14} /> Toca cualquier comida para ver su receta y calorías.
+                      <Icon name="Info" size={14} /> Toca cualquier comida para ver su receta y toca la casilla para completarla.
                     </p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <MealCard title="Desayuno" meal={todayPlan.desayuno} emoji="🍳" onClick={() => setSelectedMeal(todayPlan.desayuno)} />
-                      <MealCard title="Almuerzo" meal={todayPlan.almuerzo} emoji="🥗" onClick={() => setSelectedMeal(todayPlan.almuerzo)} />
-                      <MealCard title="Cena" meal={todayPlan.cena} emoji="🌮" onClick={() => setSelectedMeal(todayPlan.cena)} />
+                      <MealCard title="Desayuno" meal={todayPlan.desayuno} emoji="🍳" onClick={() => setSelectedMeal(todayPlan.desayuno)} checked={completedMeals.desayuno} onCheck={() => toggleMealStatus(selectedDayIndex, 'desayuno')} />
+                      <MealCard title="Almuerzo" meal={todayPlan.almuerzo} emoji="🥗" onClick={() => setSelectedMeal(todayPlan.almuerzo)} checked={completedMeals.almuerzo} onCheck={() => toggleMealStatus(selectedDayIndex, 'almuerzo')} />
+                      <MealCard title="Cena" meal={todayPlan.cena} emoji="🌮" onClick={() => setSelectedMeal(todayPlan.cena)} checked={completedMeals.cena} onCheck={() => toggleMealStatus(selectedDayIndex, 'cena')} />
                       <div className="grid grid-cols-2 gap-2">
-                         <MealCard title="Snack 1" meal={todayPlan.colacion1} emoji="🍎" isSnack onClick={() => setSelectedMeal(todayPlan.colacion1)} />
-                         <MealCard title="Snack 2" meal={todayPlan.colacion2} emoji="🍉" isSnack onClick={() => setSelectedMeal(todayPlan.colacion2)} />
+                         <MealCard title="Snack 1" meal={todayPlan.colacion1} emoji="🍎" isSnack onClick={() => setSelectedMeal(todayPlan.colacion1)} checked={completedMeals.colacion1} onCheck={() => toggleMealStatus(selectedDayIndex, 'colacion1')} />
+                         <MealCard title="Snack 2" meal={todayPlan.colacion2} emoji="🍉" isSnack onClick={() => setSelectedMeal(todayPlan.colacion2)} checked={completedMeals.colacion2} onCheck={() => toggleMealStatus(selectedDayIndex, 'colacion2')} />
                       </div>
                     </div>
                   </div>
@@ -914,21 +945,24 @@
               </div>
 
               <div className="space-y-4">
-                {weeklyPlan.map((day, idx) => (
-                  <div key={idx} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
-                    <h3 className="text-lg font-bold text-green-600 mb-3 border-b border-gray-50 pb-2 flex justify-between">
-                      {day.day}
-                      {day.progress === 100 && <Icon name="CheckCircle" size={18} className="text-green-500" />}
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-                      <SmallMealItem title="Desayuno" name={day.desayuno.name} />
-                      <SmallMealItem title="Snack 1" name={day.colacion1.name} isLight />
-                      <SmallMealItem title="Almuerzo" name={day.almuerzo.name} />
-                      <SmallMealItem title="Snack 2" name={day.colacion2.name} isLight />
-                      <SmallMealItem title="Cena" name={day.cena.name} />
+                {weeklyPlan.map((day, idx) => {
+                  const dayProgress = Object.values(day.completedMeals || {}).filter(Boolean).length * 20;
+                  return (
+                    <div key={idx} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+                      <h3 className="text-lg font-bold text-green-600 mb-3 border-b border-gray-50 pb-2 flex justify-between">
+                        {day.day}
+                        {dayProgress === 100 && <Icon name="CheckCircle" size={18} className="text-green-500" />}
+                      </h3>
+                      <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                        <SmallMealItem title="Desayuno" name={day.desayuno.name} />
+                        <SmallMealItem title="Snack 1" name={day.colacion1.name} isLight />
+                        <SmallMealItem title="Almuerzo" name={day.almuerzo.name} />
+                        <SmallMealItem title="Snack 2" name={day.colacion2.name} isLight />
+                        <SmallMealItem title="Cena" name={day.cena.name} />
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           );
@@ -976,19 +1010,29 @@
           );
 
           // --- HELPER COMPONENTS ---
-          const MealCard = ({ title, meal, emoji, isSnack, onClick }) => (
-            <div onClick={onClick} className={`p-5 rounded-2xl flex flex-col justify-between cursor-pointer hover:shadow-md transition-all active:scale-95 ${isSnack ? 'bg-orange-50 border border-orange-100 hover:bg-orange-100' : 'bg-white border border-gray-100 shadow-sm hover:border-green-200'}`}>
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-xl">{emoji}</span>
-                  <h4 className="text-sm font-bold text-gray-500 uppercase tracking-wide">{title}</h4>
+          const MealCard = ({ title, meal, emoji, isSnack, onClick, checked, onCheck }) => (
+            <div className={`p-5 rounded-2xl flex flex-col justify-between relative transition-all active:scale-95 ${checked ? 'bg-green-50 border border-green-200 opacity-80' : (isSnack ? 'bg-orange-50 border border-orange-100 hover:bg-orange-100' : 'bg-white border border-gray-100 shadow-sm hover:border-green-200')}`}>
+              {onCheck && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onCheck(); }}
+                  className={`absolute top-4 right-4 z-10 w-8 h-8 rounded-full border-2 flex items-center justify-center transition-colors ${checked ? 'bg-green-500 border-green-500 text-white shadow-sm' : 'bg-white border-gray-300 text-transparent hover:border-green-400'}`}
+                >
+                  <Icon name="CheckCircle" size={18} />
+                </button>
+              )}
+              <div onClick={onClick} className="cursor-pointer h-full flex flex-col justify-between pt-2">
+                <div>
+                  <div className="flex items-center gap-2 mb-2 pr-8">
+                    <span className="text-xl">{emoji}</span>
+                    <h4 className={`text-sm font-bold uppercase tracking-wide ${checked ? 'text-green-600' : 'text-gray-500'}`}>{title}</h4>
+                  </div>
+                  <p className={`text-lg font-bold leading-snug ${checked ? 'text-gray-500 line-through' : 'text-gray-800'}`}>{meal.name}</p>
+                  {meal.calories && (
+                     <span className={`mt-3 inline-block text-xs font-semibold px-2 py-1 rounded-lg backdrop-blur-sm border ${checked ? 'bg-transparent text-green-600 border-green-200' : 'bg-white/60 text-gray-600 border-gray-100'}`}>
+                       🔥 {meal.calories} kcal
+                     </span>
+                  )}
                 </div>
-                <p className="text-lg font-bold text-gray-800 leading-snug">{meal.name}</p>
-                {meal.calories && (
-                   <span className="mt-3 inline-block bg-white/60 text-xs font-semibold text-gray-600 px-2 py-1 rounded-lg backdrop-blur-sm border border-gray-100">
-                     🔥 {meal.calories} kcal
-                   </span>
-                )}
               </div>
             </div>
           );
@@ -1023,7 +1067,7 @@
               <div className="hidden md:flex flex-col w-64 fixed h-full bg-white border-r border-gray-200 p-6 z-20">
                 <div className="flex items-center gap-2 mb-10 text-green-600">
                   <Icon name="Activity" size={32} />
-                  <span className="text-2xl font-black tracking-tight">NutriReto App</span>
+                  <span className="text-2xl font-black tracking-tight">NutriReto</span>
                 </div>
                 <nav className="flex-1 space-y-2">
                   <NavButton id="dashboard" iconName="Home" label="Mi Día" active={activeTab} set={setActiveTab} />
@@ -1049,7 +1093,7 @@
                 <div className="md:hidden flex justify-between items-center mb-6 pt-2">
                   <div className="flex items-center gap-2 text-green-600">
                     <Icon name="Activity" size={28} />
-                    <span className="text-2xl font-black tracking-tight">NutriReto App</span>
+                    <span className="text-2xl font-black tracking-tight">NutriReto</span>
                   </div>
                   <div className="bg-white px-3 py-1.5 rounded-full shadow-sm border border-gray-100 font-bold text-sm text-gray-700 flex items-center gap-1">
                     <Icon name="Trophy" className="text-yellow-500" size={14} /> {totalPoints}
