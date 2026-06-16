@@ -4,10 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     
-    <!-- Título y Meta Tags para WhatsApp (Open Graph) -->
+    <!-- Título y Meta Tags para WhatsApp y Redes (Open Graph) -->
     <title>💚 NutriReto App</title>
     <meta property="og:title" content="💚 NutriReto App">
-    <!-- El &#8203; es un espacio invisible para forzar a WhatsApp a no leer el código -->
     <meta property="og:description" content="&#8203;">
     <meta name="description" content="&#8203;">
     <meta property="og:type" content="website">
@@ -18,12 +17,12 @@
     <!-- FontAwesome para los Iconos -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
-    <!-- React & ReactDOM CDN -->
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- React & ReactDOM CDN (Versiones fijadas para estabilidad) -->
+    <script crossorigin src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
     
-    <!-- Babel para compilar JSX en el navegador -->
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Babel (Versión fijada 7.23.0 para evitar errores de compilación in-browser) -->
+    <script src="https://unpkg.com/@babel/standalone@7.23.0/babel.min.js"></script>
 
     <style>
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
@@ -39,11 +38,17 @@
 </head>
 <body class="bg-gray-50 text-gray-900 font-sans antialiased selection:bg-green-200">
     
-    <!-- Contenedor principal de React -->
-    <div id="root"></div>
+    <!-- Contenedor principal de React con mensaje de fallback -->
+    <div id="root">
+        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; color: #10b981; font-family: sans-serif;">
+            <i class="fas fa-heartbeat" style="font-size: 3rem; margin-bottom: 1rem; animation: pulse 2s infinite;"></i>
+            <h2 style="font-weight: bold;">Cargando NutriReto...</h2>
+            <p style="color: #6b7280; font-size: 0.8rem; margin-top: 1rem;">Si esto tarda demasiado, borra la caché de tu navegador.</p>
+        </div>
+    </div>
 
     <!-- Script de la Aplicación -->
-    <script type="text/babel">
+    <script type="text/babel" data-presets="react">
         const { useState, useEffect } = React;
 
         // --- COMPONENTE DE ICONOS FONT AWESOME ---
@@ -338,27 +343,29 @@
 
         // --- COMPONENTE PRINCIPAL APP ---
         function App() {
-          // Obtener el día actual (0 es Domingo en JS, lo adaptamos para que Lunes sea 0 y Domingo 6)
           const getCurrentDayIndex = () => {
             const day = new Date().getDay();
             return day === 0 ? 6 : day - 1;
           };
 
+          // Bloques Try-Catch para asegurar que la caché nunca rompa la App
           const [userData, setUserData] = useState(() => {
-            const saved = localStorage.getItem('nutriRetoUser');
-            if (saved) {
-              const parsed = JSON.parse(saved);
-              // Migración retroactiva si no tienen los nuevos campos
-              if (!parsed.initialWeight) {
-                parsed.initialWeight = parsed.weight;
-                parsed.currentWeight = parsed.weight;
-                parsed.targetWeight = parsed.weight - parsed.goal;
-                parsed.weightHistory = [{ date: new Date().toLocaleDateString(), weight: parsed.weight }];
+            try {
+              const saved = localStorage.getItem('nutriRetoUser');
+              if (saved) {
+                const parsed = JSON.parse(saved);
+                if (!parsed.initialWeight) parsed.initialWeight = parsed.weight || 0;
+                if (!parsed.currentWeight) parsed.currentWeight = parsed.weight || 0;
+                if (!parsed.targetWeight) parsed.targetWeight = (parsed.weight || 0) - (parsed.goal || 0);
+                if (!parsed.weightHistory) parsed.weightHistory = [{ date: new Date().toLocaleDateString(), weight: parsed.weight || 0 }];
+                return parsed;
               }
-              return parsed;
+            } catch(e) {
+                console.warn("Memoria limpia iniciada");
             }
             return null;
           });
+          
           const [showOnboarding, setShowOnboarding] = useState(!userData);
           
           const [formName, setFormName] = useState('');
@@ -370,54 +377,57 @@
           const [pantry, setPantry] = useState(['pollo', 'huevo', 'avena', 'manzana', 'tortilla', 'tomate', 'chile', 'limón', 'cebolla']);
           const [newIngredient, setNewIngredient] = useState('');
           
-          // === AHORA EL PLAN, PUNTOS Y RETOS SE LEEN DE LA CACHÉ AL INICIAR ===
           const [weeklyPlan, setWeeklyPlan] = useState(() => {
-            const saved = localStorage.getItem('nutriReto_plan');
-            if (saved) {
-              let parsed = JSON.parse(saved);
-              // Migración de progreso antiguo a registro individual
-              parsed = parsed.map(day => {
-                if (day.progress !== undefined && !day.completedMeals) {
-                  const count = day.progress / 20;
-                  day.completedMeals = {
-                    desayuno: count > 0,
-                    colacion1: count > 1,
-                    almuerzo: count > 2,
-                    colacion2: count > 3,
-                    cena: count > 4
-                  };
-                  delete day.progress;
-                }
-                return day;
-              });
-              return parsed;
-            }
+            try {
+              const saved = localStorage.getItem('nutriReto_plan');
+              if (saved) {
+                let parsed = JSON.parse(saved);
+                parsed = parsed.map(day => {
+                  if (day.progress !== undefined && !day.completedMeals) {
+                    const count = day.progress / 20;
+                    day.completedMeals = {
+                      desayuno: count > 0,
+                      colacion1: count > 1,
+                      almuerzo: count > 2,
+                      colacion2: count > 3,
+                      cena: count > 4
+                    };
+                    delete day.progress;
+                  }
+                  return day;
+                });
+                return parsed;
+              }
+            } catch(e) { }
             return [];
           });
+
           const [totalPoints, setTotalPoints] = useState(() => {
-            const saved = localStorage.getItem('nutriReto_points');
-            return saved ? parseInt(saved) : 120;
+            try {
+              const saved = localStorage.getItem('nutriReto_points');
+              return saved ? parseInt(saved) : 120;
+            } catch(e) { return 120; }
           });
           
-          // NUEVO: Estado para saber qué día estamos viendo en el Dashboard
           const [selectedDayIndex, setSelectedDayIndex] = useState(getCurrentDayIndex());
 
           const [challenges, setChallenges] = useState(() => {
-            const saved = localStorage.getItem('nutriReto_challenges');
-            return saved ? JSON.parse(saved) : [];
+            try {
+                const saved = localStorage.getItem('nutriReto_challenges');
+                return saved ? JSON.parse(saved) : [];
+            } catch(e) { return []; }
           });
           const [completedChallenges, setCompletedChallenges] = useState(() => {
-            const saved = localStorage.getItem('nutriReto_completed');
-            return saved ? JSON.parse(saved) : [];
+            try {
+                const saved = localStorage.getItem('nutriReto_completed');
+                return saved ? JSON.parse(saved) : [];
+            } catch(e) { return []; }
           });
           
           const [selectedMeal, setSelectedMeal] = useState(null);
-
-          // NUEVO: Estados para la pestaña de progreso
           const [newWeightInput, setNewWeightInput] = useState('');
           const [showCongrats, setShowCongrats] = useState(false);
 
-          // === AUTO-GUARDADO: Si algo cambia, lo guardamos inmediatamente ===
           useEffect(() => {
             if (weeklyPlan.length > 0) localStorage.setItem('nutriReto_plan', JSON.stringify(weeklyPlan));
             localStorage.setItem('nutriReto_points', totalPoints);
@@ -425,9 +435,6 @@
             localStorage.setItem('nutriReto_completed', JSON.stringify(completedChallenges));
           }, [weeklyPlan, totalPoints, challenges, completedChallenges]);
 
-          // === SOLUCIÓN DE RESETEO ===
-          // Generamos el plan inicial SOLO la primera vez, y quitamos 'userData' 
-          // de las dependencias para evitar que registrar un peso borre tu semana.
           useEffect(() => {
             if (weeklyPlan.length === 0) generateWeeklyPlan();
             if (challenges.length === 0) regenerateChallenges();
@@ -441,7 +448,7 @@
             const user = {
               name: formName,
               age: parseInt(formAge),
-              weight: w, // mantenido por compatibilidad
+              weight: w,
               goal: g,
               initialWeight: w,
               currentWeight: w,
@@ -460,7 +467,7 @@
               const updatedUser = {
                 ...userData,
                 currentWeight: w,
-                weight: w, // Actualizamos también el legacy
+                weight: w,
                 weightHistory: [
                   ...userData.weightHistory, 
                   { date: new Date().toLocaleDateString(), weight: w }
@@ -469,12 +476,8 @@
               setUserData(updatedUser);
               localStorage.setItem('nutriRetoUser', JSON.stringify(updatedUser));
               setNewWeightInput('');
-              
-              // Mostrar felicitación
               setShowCongrats(true);
-              setTimeout(() => {
-                setShowCongrats(false);
-              }, 4000); // Ocultar después de 4 segundos
+              setTimeout(() => { setShowCongrats(false); }, 4000);
             }
           };
 
@@ -540,16 +543,13 @@
           const toggleMealStatus = (dayIndex, mealKey) => {
             const updatedPlan = [...weeklyPlan];
             const isCurrentlyDone = updatedPlan[dayIndex].completedMeals[mealKey];
-
-            // Invertir el estado (hecho/no hecho)
             updatedPlan[dayIndex].completedMeals[mealKey] = !isCurrentlyDone;
             setWeeklyPlan(updatedPlan);
 
-            // Ajustar puntos
             if (!isCurrentlyDone) {
               setTotalPoints(prev => prev + 5);
             } else {
-              setTotalPoints(prev => prev - 5); // Restar si el usuario se equivocó y desmarca
+              setTotalPoints(prev => prev - 5);
             }
           };
 
@@ -568,8 +568,6 @@
                   .ingredient-item { display: flex; align-items: center; text-transform: capitalize; font-size: 0.95em; color: #4b5563; }
                   .ingredient-item::before { content: ''; display: inline-block; width: 16px; height: 16px; border: 2px solid #fdba74; border-radius: 4px; margin-right: 12px; flex-shrink: 0; }
                   .watermark { text-align: center; margin-top: 40px; font-size: 0.85em; color: #9ca3af; }
-                  
-                  /* Reglas específicas al imprimir */
                   @media print {
                     body { padding: 0; }
                     .day-block { border: 1px solid #ccc; margin-bottom: 15px; }
@@ -588,14 +586,12 @@
               const dayIngredients = new Set();
               const meals = [day.desayuno, day.almuerzo, day.cena, day.colacion1, day.colacion2];
               
-              // Recolectar ingredientes únicos por día
               meals.forEach(meal => {
                 if (meal && meal.ingredients) {
                   meal.ingredients.forEach(ing => dayIngredients.add(ing.toLowerCase()));
                 }
               });
 
-              // Ordenar alfabéticamente
               const ingredientsArray = Array.from(dayIngredients).sort();
 
               if (ingredientsArray.length > 0) {
@@ -610,8 +606,8 @@
               }
             });
 
-            // Creamos el script de forma segura dividiendo la palabra para no romper Babel
-            const printScript = "<scr" + "ipt>window.onload = function() { setTimeout(() => { window.print(); window.onafterprint = function() { window.close(); } }, 500); }</scr" + "ipt>";
+            // Reemplazo seguro para evitar el quiebre de Babel Standalone
+            const printScript = "\x3Cscript\x3Ewindow.onload = function() { setTimeout(() => { window.print(); window.onafterprint = function() { window.close(); } }, 500); }\x3C/script\x3E";
 
             printContent += `
                 <div class="watermark">Generado por tu Asistente NutriReto 🥑</div>
@@ -620,7 +616,6 @@
               </html>
             `;
 
-            // Abrir la ventana e inyectar el HTML
             const printWindow = window.open('', '_blank');
             if (printWindow) {
               printWindow.document.write(printContent);
@@ -640,21 +635,17 @@
             const goalTotal = initialWt - targetWt;
             const lostWt = initialWt - currentWt;
             
-            // Calculamos el porcentaje
             let progressPercent = 0;
             if (goalTotal > 0) {
               progressPercent = Math.max(0, Math.min(100, (lostWt / goalTotal) * 100));
             } else if (goalTotal === 0 && userData.goal <= 0) {
-               // Si es solo mantenimiento
                progressPercent = 100;
             }
 
-            // Estimación de calorías perdidas (1 kg grasa ~= 7700 kcal)
             const kcalLost = Math.max(0, Math.round(lostWt * 7700));
 
             return (
               <div className="space-y-6 animate-fade-in pb-20 md:pb-0 relative">
-                {/* Modal de Felicitación Flotante */}
                 {showCongrats && (
                   <div className="absolute inset-0 z-50 flex items-center justify-center pointer-events-none">
                     <div className="bg-white p-6 rounded-3xl shadow-2xl flex flex-col items-center animate-fade-in-up border border-green-200">
@@ -678,16 +669,13 @@
                     <p className="text-xs uppercase font-bold text-blue-100 mb-1">Meta a perder</p>
                     <p className="text-2xl font-black">{userData.goal > 0 ? `${userData.goal} kg` : 'Mantenimiento'}</p>
                   </div>
-                  {/* Decorativos */}
                   <div className="absolute top-0 right-0 -mr-8 -mt-8 w-40 h-40 rounded-full bg-white opacity-10"></div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Tarjeta de Progreso Principal */}
                   <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 flex flex-col items-center justify-center">
                     <h3 className="text-lg font-bold text-gray-800 mb-4 w-full text-left">Progreso hacia la Meta</h3>
                     
-                    {/* Anillo de progreso / Barra gruesa */}
                     <div className="relative w-48 h-48 flex items-center justify-center mb-4">
                       <svg className="w-full h-full transform -rotate-90">
                         <circle cx="96" cy="96" r="88" className="text-gray-100" strokeWidth="16" stroke="currentColor" fill="transparent" />
@@ -716,20 +704,14 @@
                   </div>
 
                   <div className="space-y-6">
-                    {/* Tarjeta de Registro */}
                     <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100">
                       <h3 className="text-lg font-bold text-gray-800 mb-2">Registrar Peso Actual</h3>
                       <p className="text-sm text-gray-500 mb-4">Te recomendamos pesarte el mismo día de la semana y a la misma hora.</p>
                       <form onSubmit={handleWeightSubmit} className="flex gap-2">
                         <div className="relative flex-1">
                           <input 
-                            type="number" 
-                            step="0.1" 
-                            min="30" 
-                            max="250" 
-                            required 
-                            value={newWeightInput} 
-                            onChange={(e) => setNewWeightInput(e.target.value)} 
+                            type="number" step="0.1" min="30" max="250" required 
+                            value={newWeightInput} onChange={(e) => setNewWeightInput(e.target.value)} 
                             placeholder="Ej. 74.5" 
                             className="w-full px-4 py-3 pr-10 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 font-bold text-lg" 
                           />
@@ -741,7 +723,6 @@
                       </form>
                     </div>
 
-                    {/* Tarjeta de Equivalencia Energética */}
                     <div className="bg-orange-50 rounded-3xl p-6 shadow-sm border border-orange-100 flex items-center gap-4">
                       <div className="bg-orange-100 p-4 rounded-full text-orange-500 shrink-0">
                         <Icon name="Activity" size={32} />
@@ -755,7 +736,6 @@
                   </div>
                 </div>
 
-                {/* Historial de Pesajes */}
                 <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 mt-6">
                   <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
                     <Icon name="Calendar" className="text-gray-400" size={18} /> Historial de Pesajes
@@ -776,14 +756,13 @@
                     ))}
                   </div>
                 </div>
-
               </div>
             );
           };
 
           const renderDashboard = () => {
             const todayPlan = weeklyPlan[selectedDayIndex]; 
-            if (!todayPlan) return null; // Previene fallos mientras se carga el plan
+            if (!todayPlan) return null;
 
             const actualDayIndex = getCurrentDayIndex();
             const isToday = selectedDayIndex === actualDayIndex;
@@ -817,7 +796,6 @@
                   <div className="absolute bottom-0 right-10 -mb-8 w-24 h-24 rounded-full bg-white opacity-10"></div>
                 </div>
 
-                {/* Day Selector Interactivo */}
                 <div className="bg-white rounded-3xl p-4 shadow-sm border border-gray-100 mb-6 flex justify-between items-center overflow-x-auto no-scrollbar gap-2">
                   {['L', 'M', 'M', 'J', 'V', 'S', 'D'].map((letter, idx) => (
                     <button
@@ -826,9 +804,7 @@
                       className={`shrink-0 w-12 h-12 rounded-full flex flex-col items-center justify-center font-bold transition-all ${selectedDayIndex === idx ? 'bg-green-500 text-white shadow-md transform scale-110' : 'bg-gray-50 text-gray-500 hover:bg-green-100'}`}
                     >
                       <span className="text-sm leading-none">{letter}</span>
-                      {/* Puntito verde si es el día real pero no está seleccionado */}
                       {idx === actualDayIndex && selectedDayIndex !== actualDayIndex && <span className="w-1 h-1 bg-green-500 rounded-full mt-1"></span>}
-                      {/* Puntito blanco si es el día real y está seleccionado */}
                       {idx === actualDayIndex && selectedDayIndex === actualDayIndex && <span className="w-1 h-1 bg-white rounded-full mt-1"></span>}
                     </button>
                   ))}
@@ -867,7 +843,7 @@
                       </button>
                     </div>
                     <p className="text-xs text-gray-500 mb-3 px-2 flex items-center gap-1">
-                      <Icon name="Info" size={14} /> Toca cualquier comida para ver su receta y toca la casilla para completarla.
+                      <Icon name="Info" size={14} /> Toca cualquier comida para ver receta y la casilla para completarla.
                     </p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <MealCard title="Desayuno" meal={todayPlan.desayuno} emoji="🍳" onClick={() => setSelectedMeal(todayPlan.desayuno)} checked={completedMeals.desayuno} onCheck={() => toggleMealStatus(selectedDayIndex, 'desayuno')} />
@@ -1208,9 +1184,14 @@
           );
         }
 
-        // Renderizado inicial en el DOM
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
+        // Renderizado inicial en el DOM (Recuperación de pantalla blanca)
+        try {
+          const root = ReactDOM.createRoot(document.getElementById('root'));
+          root.render(<App />);
+        } catch (e) {
+          document.getElementById('root').innerHTML = '<div style="padding: 20px; text-align: center; color: red;">Error crítico al cargar. Por favor, limpia la caché de tu navegador.</div>';
+          console.error(e);
+        }
     </script>
 </body>
 </html>
